@@ -59,7 +59,7 @@ class GeminiNode(BaseNode):
             raise ValueError("API 키가 설정되지 않았습니다. GEMINI_API_KEY 환경변수를 설정해주세요.")
 
         # 클라이언트 생성
-        client = genai.Client(api_key=api_key)
+        client = genai.Client()
 
         # 프롬프트 구성
         prompt = f"""
@@ -100,7 +100,7 @@ class GeminiNode(BaseNode):
 
         # API 호출
         response = client.models.generate_content(
-            model='models/gemini-1.5-flash',
+            model='models/gemini-2.5-flash',
             contents=prompt
         )
 
