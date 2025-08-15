@@ -3,7 +3,7 @@ from typing import Type, Dict, Any, Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
-from enums import NodeType
+from .enums import NodeType
 
 # (NodeExecutionResult, NodeType 등 기존 클래스는 그대로 있다고 가정)
 

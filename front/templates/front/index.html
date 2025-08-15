@@ -1,9 +1,28 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Stock App</title>
+    <title>Workflow Builder</title>
+    <!-- Tailwind CSS CDN (1차 개발용) -->
+    <script src="https://cdn.tailwindcss.com"></script>
   </head>
-  <body></body>
+  <body class="h-screen w-screen overflow-hidden">
+    <div class="h-full grid grid-cols-[320px_1fr]">
+      <!-- Sidebar -->
+      <aside class="border-r p-4 overflow-y-auto" id="sidebar">
+        <div class="text-sm text-gray-600">노드 목록을 불러오는 중…</div>
+      </aside>
+
+      <!-- Canvas -->
+      <main class="relative bg-gray-50" id="canvas">
+        <div class="absolute top-2 right-2 text-xs text-gray-500">
+          드래그해서 노드를 배치하세요
+        </div>
+      </main>
+    </div>
+
+    <script src="{% static 'front/js/workflow.js' %}"></script>
+  </body>
 </html>
