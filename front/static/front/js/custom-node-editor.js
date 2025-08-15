@@ -497,10 +497,7 @@
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
       e.preventDefault();
       window.dispatchEvent(new CustomEvent("workflow:changed"));
-    } else if (
-      selectedNodes.length > 0 &&
-      (e.key === "Backspace" || e.key === "Delete")
-    ) {
+    } else if (selectedNodes.length > 0 && e.key === "Delete") {
       e.preventDefault();
       selectedNodes.forEach((node) => deleteNode(node.id));
     } else if (

@@ -218,26 +218,46 @@ async function init() {
     const formRoot = document.getElementById("node-form");
     panelClose?.addEventListener("click", () => panel?.classList.add("hidden"));
 
-    function renderField(key, schema, value) {
+    function renderField(key, schema, value, isOutput = false) {
       const type = (schema.type || "string").toLowerCase();
       const label = schema.title || key;
       const desc = schema.description || "";
       let inputHtml = "";
-      if (type === "integer" || type === "number") {
-        inputHtml = `<input data-key="${key}" type="number" value="${
-          value ?? ""
-        }" class="w-full border rounded px-2 py-1" />`;
-      } else if (type === "boolean") {
-        const checked = value ? "checked" : "";
-        inputHtml = `<input data-key="${key}" type="checkbox" ${checked} class="mr-2" />`;
+
+      if (isOutput) {
+        // For output fields, use textarea for better editing
+        if (type === "object" || type === "array") {
+          const displayValue =
+            typeof value === "object"
+              ? JSON.stringify(value, null, 2)
+              : value || "";
+          inputHtml = `<textarea data-key="${key}" data-output="true" rows="4" class="w-full border rounded px-2 py-1 text-xs font-mono bg-gray-50" placeholder="Output will appear here...">${displayValue}</textarea>`;
+        } else {
+          inputHtml = `<input data-key="${key}" data-output="true" type="text" value="${
+            value ?? ""
+          }" class="w-full border rounded px-2 py-1 bg-gray-50" placeholder="Output will appear here..." />`;
+        }
       } else {
-        inputHtml = `<input data-key="${key}" type="text" value="${
-          value ?? ""
-        }" class="w-full border rounded px-2 py-1" />`;
+        // For input fields, keep original behavior
+        if (type === "integer" || type === "number") {
+          inputHtml = `<input data-key="${key}" type="number" value="${
+            value ?? ""
+          }" class="w-full border rounded px-2 py-1" />`;
+        } else if (type === "boolean") {
+          const checked = value ? "checked" : "";
+          inputHtml = `<input data-key="${key}" type="checkbox" ${checked} class="mr-2" />`;
+        } else {
+          inputHtml = `<input data-key="${key}" type="text" value="${
+            value ?? ""
+          }" class="w-full border rounded px-2 py-1" />`;
+        }
       }
+
       return `
         <div class="mb-3">
-          <div class="text-xs font-medium mb-1">${label}</div>
+          <div class="text-xs font-medium mb-1 ${
+            isOutput ? "text-purple-600" : ""
+          }">${label} ${isOutput ? "(Output)" : ""}</div>
           ${inputHtml}
           ${
             desc ? `<div class="text-[10px] opacity-70 mt-1">${desc}</div>` : ""
@@ -250,6 +270,7 @@ async function init() {
     async function executeNode(nodeId, currentValues, nodeDetail) {
       const resultDiv = document.getElementById("execution-result");
       const runBtn = document.getElementById("run-node-btn");
+      const historyDiv = document.getElementById("execution-history");
 
       if (!resultDiv || !runBtn) return;
 
@@ -269,29 +290,37 @@ async function init() {
         });
 
         const result = await response.json();
+        const timestamp = new Date().toLocaleTimeString();
 
         if (result.success) {
+          // Update output fields with new values
+          updateOutputFields(result.result);
+
+          // Add to history
+          addToExecutionHistory(timestamp, true, result.result, historyDiv);
+
+          // Show success message
           resultDiv.innerHTML = `
-            <div class="text-green-600 font-medium">✓ Success</div>
-            <div class="mt-1 p-2 bg-green-50 rounded text-xs">
-              <pre class="whitespace-pre-wrap">${JSON.stringify(
-                result.result,
-                null,
-                2
-              )}</pre>
-            </div>
+            <div class="text-green-600 font-medium">✓ Success (${timestamp})</div>
+            <div class="text-xs text-gray-500 mt-1">Output fields updated</div>
           `;
         } else {
+          // Add error to history
+          addToExecutionHistory(timestamp, false, result.error, historyDiv);
+
           resultDiv.innerHTML = `
-            <div class="text-red-600 font-medium">✗ Error</div>
+            <div class="text-red-600 font-medium">✗ Error (${timestamp})</div>
             <div class="mt-1 p-2 bg-red-50 rounded text-xs">
               ${result.error || "Unknown error occurred"}
             </div>
           `;
         }
       } catch (error) {
+        const timestamp = new Date().toLocaleTimeString();
+        addToExecutionHistory(timestamp, false, error.message, historyDiv);
+
         resultDiv.innerHTML = `
-          <div class="text-red-600 font-medium">✗ Network Error</div>
+          <div class="text-red-600 font-medium">✗ Network Error (${timestamp})</div>
           <div class="mt-1 p-2 bg-red-50 rounded text-xs">
             ${error.message}
           </div>
@@ -303,6 +332,58 @@ async function init() {
       }
     }
 
+    // Helper function to update output fields
+    function updateOutputFields(resultData) {
+      const outputFields = document.querySelectorAll('[data-output="true"]');
+      outputFields.forEach((field) => {
+        const key = field.getAttribute("data-key");
+        if (resultData.hasOwnProperty(key)) {
+          const value = resultData[key];
+          if (field.tagName === "TEXTAREA") {
+            field.value =
+              typeof value === "object"
+                ? JSON.stringify(value, null, 2)
+                : value;
+          } else {
+            field.value = value;
+          }
+        }
+      });
+    }
+
+    // Helper function to add execution to history
+    function addToExecutionHistory(timestamp, success, data, historyDiv) {
+      if (!historyDiv) return;
+
+      const historyItem = document.createElement("div");
+      historyItem.className = `mb-2 p-2 rounded text-xs border-l-4 ${
+        success ? "border-green-400 bg-green-50" : "border-red-400 bg-red-50"
+      }`;
+
+      const dataDisplay = success
+        ? `<pre class="whitespace-pre-wrap mt-1">${JSON.stringify(
+            data,
+            null,
+            2
+          )}</pre>`
+        : `<div class="text-red-600 mt-1">${data}</div>`;
+
+      historyItem.innerHTML = `
+        <div class="font-medium ${success ? "text-green-700" : "text-red-700"}">
+          ${success ? "✓" : "✗"} ${timestamp}
+        </div>
+        ${dataDisplay}
+      `;
+
+      // Add to top of history
+      historyDiv.insertBefore(historyItem, historyDiv.firstChild);
+
+      // Limit history to last 10 items
+      while (historyDiv.children.length > 10) {
+        historyDiv.removeChild(historyDiv.lastChild);
+      }
+    }
+
     function openPanelForNode(detail) {
       if (!detail || !detail.data?.info) {
         panel?.classList.add("hidden");
@@ -311,9 +392,18 @@ async function init() {
       }
       const info = detail.data.info;
       const inputs = info?.inputs?.properties || {};
+      const outputs = info?.outputs?.properties || {};
       const currentValues = detail.data.values || {};
-      const fieldsHtml = Object.keys(inputs)
-        .map((k) => renderField(k, inputs[k], currentValues[k]))
+      const currentOutputs = detail.data.outputs || {};
+
+      // Render input fields
+      const inputFieldsHtml = Object.keys(inputs)
+        .map((k) => renderField(k, inputs[k], currentValues[k], false))
+        .join("");
+
+      // Render output fields
+      const outputFieldsHtml = Object.keys(outputs)
+        .map((k) => renderField(k, outputs[k], currentOutputs[k], true))
         .join("");
 
       // Add execution button if the node has an ID
@@ -327,10 +417,38 @@ async function init() {
            </div>`
         : "";
 
+      // Add execution history section
+      const historyHtml = nodeId
+        ? `<div class="mt-4 pt-4 border-t border-gray-200">
+             <div class="text-xs font-medium mb-2 text-gray-600">Execution History</div>
+             <div id="execution-history" class="max-h-48 overflow-y-auto"></div>
+           </div>`
+        : "";
+
+      const sectionsHtml = `
+        ${
+          inputFieldsHtml
+            ? `<div class="mb-4">
+          <div class="text-sm font-medium mb-2 text-blue-600">Inputs</div>
+          ${inputFieldsHtml}
+        </div>`
+            : ""
+        }
+        ${
+          outputFieldsHtml
+            ? `<div class="mb-4">
+          <div class="text-sm font-medium mb-2 text-purple-600">Outputs</div>
+          ${outputFieldsHtml}
+        </div>`
+            : ""
+        }
+      `;
+
       formRoot.innerHTML =
-        (fieldsHtml ||
+        (sectionsHtml ||
           '<div class="text-xs opacity-70">설정할 필드가 없습니다.</div>') +
-        runButtonHtml;
+        runButtonHtml +
+        historyHtml;
       panel?.classList.remove("hidden");
 
       // Add run button event listener
@@ -341,30 +459,65 @@ async function init() {
         });
       }
 
-      // bind change
-      formRoot.querySelectorAll("input").forEach((el) => {
-        el.addEventListener("input", (e) => {
-          const key = el.getAttribute("data-key");
-          const schema = inputs[key] || {};
-          let val = el.type === "checkbox" ? el.checked : el.value;
-          if (
-            (schema.type === "integer" || schema.type === "number") &&
-            el.value !== ""
-          ) {
-            val = Number(val);
-          }
-          // Update current values for execution
-          currentValues[key] = val;
+      // bind change for input fields
+      formRoot
+        .querySelectorAll(
+          "input:not([data-output]), textarea:not([data-output])"
+        )
+        .forEach((el) => {
+          el.addEventListener("input", (e) => {
+            const key = el.getAttribute("data-key");
+            const schema = inputs[key] || {};
+            let val = el.type === "checkbox" ? el.checked : el.value;
+            if (
+              (schema.type === "integer" || schema.type === "number") &&
+              el.value !== ""
+            ) {
+              val = Number(val);
+            }
+            // Update current values for execution
+            currentValues[key] = val;
 
-          const newData = {
-            values: Object.assign({}, currentValues, { [key]: val }),
-          };
-          window.WorkflowEditor?.updateNodeData(detail.id, newData);
+            const newData = {
+              values: Object.assign({}, currentValues, { [key]: val }),
+            };
+            window.WorkflowEditor?.updateNodeData(detail.id, newData);
+          });
+          el.addEventListener("change", (e) =>
+            el.dispatchEvent(new Event("input"))
+          );
         });
-        el.addEventListener("change", (e) =>
-          el.dispatchEvent(new Event("input"))
-        );
-      });
+
+      // bind change for output fields
+      formRoot
+        .querySelectorAll("input[data-output], textarea[data-output]")
+        .forEach((el) => {
+          el.addEventListener("input", (e) => {
+            const key = el.getAttribute("data-key");
+            let val = el.value;
+
+            // Try to parse JSON for textarea outputs
+            if (el.tagName === "TEXTAREA") {
+              try {
+                val = JSON.parse(el.value);
+              } catch (e) {
+                // Keep as string if not valid JSON
+              }
+            }
+
+            // Update current outputs
+            currentOutputs[key] = val;
+
+            const newData = {
+              values: currentValues,
+              outputs: Object.assign({}, currentOutputs, { [key]: val }),
+            };
+            window.WorkflowEditor?.updateNodeData(detail.id, newData);
+          });
+          el.addEventListener("change", (e) =>
+            el.dispatchEvent(new Event("input"))
+          );
+        });
     }
 
     window.addEventListener("workflow:nodeSelected", (e) =>
