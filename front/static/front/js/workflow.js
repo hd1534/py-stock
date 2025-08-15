@@ -121,7 +121,7 @@ function setupCanvas() {
     const invY = (y - pan.y) / scale;
 
     addNodeCard(inner, node, { x: invX, y: invY });
-    persist();
+    saveCurrent();
   });
 
   // panning with middle mouse or space+drag
@@ -169,11 +169,7 @@ function setupCanvas() {
     applyTransform();
   });
 
-  // load saved state
-  const saved = load();
-  if (saved?.nodes) {
-    saved.nodes.forEach((n) => addNodeCard(inner, n.node, n.pos));
-  }
+  // initial transform only; workflow data will be loaded in init()
   applyTransform();
 }
 
@@ -214,14 +210,14 @@ function addNodeCard(container, node, pos) {
     card.style.top = `${origin.y + dy}px`;
   });
   window.addEventListener("mouseup", () => {
-    if (dragging) persist();
+    if (dragging) saveCurrent();
     dragging = false;
   });
 
   // simple close
   card.addEventListener("dblclick", () => {
     card.remove();
-    persist();
+    saveCurrent();
   });
 }
 
@@ -242,17 +238,39 @@ function collect() {
   return { nodes: items };
 }
 
-function persist() {
+async function persistToServer(currentId) {
   const data = collect();
-  localStorage.setItem("workflow-state", JSON.stringify(data));
+  if (currentId) {
+    await fetch(`/api/workflows/${currentId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data }),
+    });
+    return currentId;
+  } else {
+    const res = await fetch(`/api/workflows/create/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Untitled", data }),
+    });
+    const json = await res.json();
+    return json.id;
+  }
 }
 
-function load() {
-  try {
-    const raw = localStorage.getItem("workflow-state");
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
+async function loadFromServer(id) {
+  const res = await fetch(`/api/workflows/${id}/`);
+  if (!res.ok) return null;
+  return await res.json();
+}
+
+async function saveCurrent() {
+  const id = await persistToServer(window.__WF_ID__);
+  if (!window.__WF_ID__) {
+    window.__WF_ID__ = id;
+    const url = new URL(location.href);
+    url.searchParams.set("wf", String(id));
+    history.replaceState({}, "", url);
   }
 }
 
@@ -289,12 +307,24 @@ async function init() {
         li.style.display = t === "*" || t === type ? "" : "none";
       });
     });
-    document.getElementById("save")?.addEventListener("click", persist);
-    document.getElementById("reset")?.addEventListener("click", () => {
-      localStorage.removeItem("workflow-state");
+    document.getElementById("save")?.addEventListener("click", saveCurrent);
+    document.getElementById("reset")?.addEventListener("click", async () => {
       const inner = document.getElementById("inner");
       inner.innerHTML = "";
+      if (window.__WF_ID__) await saveCurrent();
     });
+
+    // Load workflow from server if URL contains ?wf=ID
+    const params = new URLSearchParams(location.search);
+    const wfId = params.get("wf");
+    if (wfId) {
+      const saved = await loadFromServer(wfId);
+      if (saved?.data?.nodes) {
+        const inner = document.getElementById("inner");
+        saved.data.nodes.forEach((n) => addNodeCard(inner, n.node, n.pos));
+      }
+      window.__WF_ID__ = parseInt(wfId, 10);
+    }
   } catch (e) {
     console.error(e);
     const sidebar = document.getElementById("sidebar");
