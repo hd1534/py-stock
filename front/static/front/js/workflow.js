@@ -252,6 +252,84 @@ async function init() {
       }, 500);
     });
 
+    // node selection -> open panel
+    const panel = document.getElementById("node-panel");
+    const panelClose = document.getElementById("node-panel-close");
+    const formRoot = document.getElementById("node-form");
+    panelClose?.addEventListener("click", () => panel?.classList.add("hidden"));
+
+    function renderField(key, schema, value) {
+      const type = (schema.type || "string").toLowerCase();
+      const label = schema.title || key;
+      const desc = schema.description || "";
+      let inputHtml = "";
+      if (type === "integer" || type === "number") {
+        inputHtml = `<input data-key="${key}" type="number" value="${
+          value ?? ""
+        }" class="w-full border rounded px-2 py-1" />`;
+      } else if (type === "boolean") {
+        const checked = value ? "checked" : "";
+        inputHtml = `<input data-key="${key}" type="checkbox" ${checked} class="mr-2" />`;
+      } else {
+        inputHtml = `<input data-key="${key}" type="text" value="${
+          value ?? ""
+        }" class="w-full border rounded px-2 py-1" />`;
+      }
+      return `
+        <div class="mb-3">
+          <div class="text-xs font-medium mb-1">${label}</div>
+          ${inputHtml}
+          ${
+            desc ? `<div class="text-[10px] opacity-70 mt-1">${desc}</div>` : ""
+          }
+        </div>
+      `;
+    }
+
+    function openPanelForNode(detail) {
+      if (!detail || !detail.data?.info) {
+        panel?.classList.add("hidden");
+        formRoot.innerHTML = "";
+        return;
+      }
+      const info = detail.data.info;
+      const inputs = info?.inputs?.properties || {};
+      const currentValues = detail.data.values || {};
+      const fieldsHtml = Object.keys(inputs)
+        .map((k) => renderField(k, inputs[k], currentValues[k]))
+        .join("");
+      formRoot.innerHTML =
+        fieldsHtml ||
+        '<div class="text-xs opacity-70">설정할 필드가 없습니다.</div>';
+      panel?.classList.remove("hidden");
+
+      // bind change
+      formRoot.querySelectorAll("input").forEach((el) => {
+        el.addEventListener("input", (e) => {
+          const key = el.getAttribute("data-key");
+          const schema = inputs[key] || {};
+          let val = el.type === "checkbox" ? el.checked : el.value;
+          if (
+            (schema.type === "integer" || schema.type === "number") &&
+            el.value !== ""
+          ) {
+            val = Number(val);
+          }
+          const newData = {
+            values: Object.assign({}, currentValues, { [key]: val }),
+          };
+          window.WorkflowEditor?.updateNodeData(detail.id, newData);
+        });
+        el.addEventListener("change", (e) =>
+          el.dispatchEvent(new Event("input"))
+        );
+      });
+    }
+
+    window.addEventListener("workflow:nodeSelected", (e) =>
+      openPanelForNode(e.detail)
+    );
+
     // Load workflow from server if URL contains ?wf=ID
     const params = new URLSearchParams(location.search);
     const wfId = params.get("wf");

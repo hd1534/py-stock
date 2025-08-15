@@ -75,6 +75,21 @@
         </div>
       </main>
     </div>
+
+    <!-- Node property panel -->
+    <div
+      id="node-panel"
+      class="hidden fixed top-0 right-0 h-full w-[360px] bg-white border-l shadow-xl z-50">
+      <div class="flex items-center justify-between p-3 border-b">
+        <div class="text-sm font-semibold">노드 설정</div>
+        <button id="node-panel-close" class="text-xs px-2 py-1 border rounded">
+          닫기
+        </button>
+      </div>
+      <div
+        id="node-form"
+        class="p-3 overflow-y-auto h-[calc(100%-44px)] text-sm"></div>
+    </div>
     <script src="{% static 'front/js/drawflow-editor.js' %}"></script>
     <script src="{% static 'front/js/workflow.js' %}"></script>
   </body>
