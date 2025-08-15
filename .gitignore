@@ -19,3 +19,6 @@ wheels/
 .idea/
 *.swp
 *.swo
+
+# KIS
+.KIS*
