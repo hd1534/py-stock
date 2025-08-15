@@ -3,7 +3,7 @@ import os
 from typing import Optional, List, Dict, Any
 
 from pydantic import BaseModel, Field
-import google.generativeai as genai
+from google import genai
 
 from api.nodes.enums import NodeType
 from api.nodes.base import BaseNode
@@ -58,18 +58,8 @@ class GeminiNode(BaseNode):
         if not api_key:
             raise ValueError("API 키가 설정되지 않았습니다. GEMINI_API_KEY 환경변수를 설정해주세요.")
 
-        # Gemini API 설정
-        genai.configure(api_key=api_key)
-
-        # 모델 생성 및 설정
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",  # 최신 모델명으로 수정
-            generation_config={
-                "temperature": 0.3,  # 주식 추천에는 일관성 있는 응답 필요
-                "top_p": 0.8,
-                "top_k": 40,
-            }
-        )
+        # 클라이언트 생성
+        client = genai.Client(api_key=api_key)
 
         # 프롬프트 구성
         prompt = f"""
@@ -109,7 +99,10 @@ class GeminiNode(BaseNode):
 """
 
         # API 호출
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model='models/gemini-1.5-flash',
+            contents=prompt
+        )
 
         if not response.text:
             raise RuntimeError("Gemini API에서 응답을 받지 못했습니다.")
