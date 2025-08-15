@@ -7,18 +7,68 @@
     <title>Workflow Builder</title>
     <!-- Tailwind CSS CDN (1차 개발용) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* 간단한 캔버스 격자 배경 */
+      .grid-bg {
+        background-color: #f8fafc; /* tailwind slate-50 근사치 */
+        background-image: linear-gradient(
+            to right,
+            rgba(148, 163, 184, 0.15) 1px,
+            transparent 1px
+          ),
+          linear-gradient(
+            to bottom,
+            rgba(148, 163, 184, 0.15) 1px,
+            transparent 1px
+          );
+        background-size: 24px 24px;
+      }
+      .card-drag-handle {
+        cursor: move;
+      }
+    </style>
   </head>
   <body class="h-screen w-screen overflow-hidden">
     <div class="h-full grid grid-cols-[320px_1fr]">
       <!-- Sidebar -->
       <aside class="border-r p-4 overflow-y-auto" id="sidebar">
+        <div class="mb-4 space-y-2" id="sidebar-tools">
+          <input
+            id="search"
+            type="text"
+            placeholder="검색: 이름/설명/카테고리"
+            class="w-full border rounded px-3 py-2 text-sm" />
+          <div id="type-filters" class="flex flex-wrap gap-2"></div>
+        </div>
         <div class="text-sm text-gray-600">노드 목록을 불러오는 중…</div>
       </aside>
 
       <!-- Canvas -->
-      <main class="relative bg-gray-50" id="canvas">
+      <main class="relative" id="canvas">
         <div class="absolute top-2 right-2 text-xs text-gray-500">
           드래그해서 노드를 배치하세요
+        </div>
+        <div class="absolute top-2 left-2 flex gap-2">
+          <button
+            id="save"
+            class="px-2 py-1 text-xs border rounded bg-white hover:bg-gray-50">
+            저장
+          </button>
+          <button
+            id="reset"
+            class="px-2 py-1 text-xs border rounded bg-white hover:bg-gray-50">
+            초기화
+          </button>
+          <button
+            id="reset-view"
+            class="px-2 py-1 text-xs border rounded bg-white hover:bg-gray-50">
+            뷰 리셋
+          </button>
+        </div>
+        <div id="viewport" class="relative w-full h-full overflow-hidden">
+          <div
+            id="inner"
+            class="absolute top-0 left-0 w-full h-full grid-bg origin-top-left"></div>
         </div>
       </main>
     </div>

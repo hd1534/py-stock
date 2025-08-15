@@ -29,10 +29,33 @@ async function fetchNodes() {
   return await res.json();
 }
 
+function makeTypeFilters(types) {
+  const container = document.getElementById("type-filters");
+  container.innerHTML = "";
+  const allBtn = document.createElement("button");
+  allBtn.className =
+    "px-2 py-1 text-xs border rounded bg-white hover:bg-gray-50 data-[active=true]:bg-gray-200";
+  allBtn.textContent = "전체";
+  allBtn.dataset.type = "*";
+  container.appendChild(allBtn);
+  types.forEach((t) => {
+    const meta = TYPE_META[t] || TYPE_META.utility;
+    const btn = document.createElement("button");
+    btn.className = `px-2 py-1 text-xs border rounded bg-white hover:bg-gray-50 ${meta.color}`;
+    btn.textContent = t;
+    btn.dataset.type = t;
+    container.appendChild(btn);
+  });
+}
+
 function renderSidebar(nodes) {
   const sidebar = document.getElementById("sidebar");
+  // keep tools
+  const tools = document.getElementById("sidebar-tools");
   sidebar.innerHTML = "";
+  if (tools) sidebar.appendChild(tools);
   const groups = groupByType(nodes);
+  makeTypeFilters(Object.keys(groups));
 
   Object.entries(groups).forEach(([type, list]) => {
     const meta = TYPE_META[type] || TYPE_META.utility;
@@ -72,36 +95,165 @@ function renderSidebar(nodes) {
 
 function setupCanvas() {
   const canvas = document.getElementById("canvas");
-  canvas.addEventListener("dragover", (e) => e.preventDefault());
-  canvas.addEventListener("drop", (e) => {
+  const viewport = document.getElementById("viewport");
+  const inner = document.getElementById("inner");
+  let pan = { x: 0, y: 0 };
+  let scale = 1;
+
+  function applyTransform() {
+    inner.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${scale})`;
+  }
+
+  // drag from sidebar to canvas
+  viewport.addEventListener("dragover", (e) => e.preventDefault());
+  viewport.addEventListener("drop", (e) => {
     e.preventDefault();
     const data = e.dataTransfer.getData("application/json");
     if (!data) return;
     const node = JSON.parse(data);
-    const rect = canvas.getBoundingClientRect();
+    const rect = viewport.getBoundingClientRect();
 
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    addNodeCard(canvas, node, { x, y });
+    // compensate transform
+    const invX = (x - pan.x) / scale;
+    const invY = (y - pan.y) / scale;
+
+    addNodeCard(inner, node, { x: invX, y: invY });
+    persist();
   });
+
+  // panning with middle mouse or space+drag
+  let isPanning = false;
+  let start = { x: 0, y: 0 };
+  viewport.addEventListener("mousedown", (e) => {
+    if (e.button === 1 || e.target === viewport || e.code === "Space") {
+      isPanning = true;
+      start = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+      e.preventDefault();
+    }
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!isPanning) return;
+    pan.x = e.clientX - start.x;
+    pan.y = e.clientY - start.y;
+    applyTransform();
+  });
+  window.addEventListener("mouseup", () => (isPanning = false));
+
+  // zoom with wheel
+  viewport.addEventListener(
+    "wheel",
+    (e) => {
+      if (!e.ctrlKey && !e.metaKey) return; // pinch/ctrl+wheel to zoom
+      e.preventDefault();
+      const delta = -Math.sign(e.deltaY) * 0.1;
+      const newScale = Math.min(2, Math.max(0.5, scale + delta));
+      // zoom towards cursor
+      const rect = viewport.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      pan.x = cx - ((cx - pan.x) * newScale) / scale;
+      pan.y = cy - ((cy - pan.y) * newScale) / scale;
+      scale = newScale;
+      applyTransform();
+    },
+    { passive: false }
+  );
+
+  // toolbar
+  document.getElementById("reset-view")?.addEventListener("click", () => {
+    pan = { x: 0, y: 0 };
+    scale = 1;
+    applyTransform();
+  });
+
+  // load saved state
+  const saved = load();
+  if (saved?.nodes) {
+    saved.nodes.forEach((n) => addNodeCard(inner, n.node, n.pos));
+  }
+  applyTransform();
 }
 
-function addNodeCard(canvas, node, pos) {
+function addNodeCard(container, node, pos) {
   const card = document.createElement("div");
   const meta =
     TYPE_META[(node.type || "utility").toLowerCase()] || TYPE_META.utility;
-  card.className = `absolute border ${meta.color} rounded shadow p-3 w-48`;
-  card.style.left = `${pos.x - 24}px`;
-  card.style.top = `${pos.y - 24}px`;
+  card.className = `absolute border ${meta.color} rounded shadow w-56 select-none`;
+  card.style.left = `${pos.x}px`;
+  card.style.top = `${pos.y}px`;
   card.innerHTML = `
-    <div class="text-sm font-semibold mb-1">${node.name}</div>
-    <div class="text-xs opacity-80 mb-2">${node.category || ""}</div>
-    <div class="text-[10px] opacity-70">Inputs: ${Object.keys(
+    <div class="text-sm font-semibold mb-1 px-3 py-2 border-b bg-white/70 card-drag-handle">${
+      node.name
+    }</div>
+    <div class="p-3 text-xs opacity-80">${node.category || ""}</div>
+    <div class="px-3 pb-3 text-[10px] opacity-70">Inputs: ${Object.keys(
       node.inputs?.properties || {}
     ).join(", ")}</div>
   `;
-  canvas.appendChild(card);
+  container.appendChild(card);
+
+  // drag within canvas
+  const handle = card.querySelector(".card-drag-handle");
+  let dragging = false;
+  let start = { x: 0, y: 0 };
+  let origin = { x: pos.x, y: pos.y };
+  handle.addEventListener("mousedown", (e) => {
+    dragging = true;
+    start = { x: e.clientX, y: e.clientY };
+    origin = { x: parseFloat(card.style.left), y: parseFloat(card.style.top) };
+    e.preventDefault();
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    card.style.left = `${origin.x + dx}px`;
+    card.style.top = `${origin.y + dy}px`;
+  });
+  window.addEventListener("mouseup", () => {
+    if (dragging) persist();
+    dragging = false;
+  });
+
+  // simple close
+  card.addEventListener("dblclick", () => {
+    card.remove();
+    persist();
+  });
+}
+
+function collect() {
+  const inner = document.getElementById("inner");
+  const items = Array.from(inner.children).map((el) => {
+    const nameEl = el.querySelector(".card-drag-handle");
+    const nodeName = nameEl?.textContent || "";
+    // store minimal node info (id preferred if sidebar had set it)
+    return {
+      node: { name: nodeName },
+      pos: {
+        x: parseFloat(el.style.left) || 0,
+        y: parseFloat(el.style.top) || 0,
+      },
+    };
+  });
+  return { nodes: items };
+}
+
+function persist() {
+  const data = collect();
+  localStorage.setItem("workflow-state", JSON.stringify(data));
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem("workflow-state");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function init() {
@@ -109,6 +261,40 @@ async function init() {
     const nodes = await fetchNodes();
     renderSidebar(nodes);
     setupCanvas();
+    // sidebar interactions
+    const search = document.getElementById("search");
+    const sidebar = document.getElementById("sidebar");
+    if (search) {
+      search.addEventListener("input", () => {
+        const q = search.value.trim().toLowerCase();
+        // simple filter by text on the fly
+        const items = sidebar.querySelectorAll("li");
+        items.forEach((li) => {
+          const node = JSON.parse(li.dataset.node || "{}");
+          const text = `${node.name} ${node.description || ""} ${
+            node.category || ""
+          }`.toLowerCase();
+          li.style.display = text.includes(q) ? "" : "none";
+        });
+      });
+    }
+    document.getElementById("type-filters")?.addEventListener("click", (e) => {
+      if (!(e.target instanceof HTMLElement)) return;
+      const t = e.target.dataset.type;
+      if (!t) return;
+      const items = sidebar.querySelectorAll("li");
+      items.forEach((li) => {
+        const node = JSON.parse(li.dataset.node || "{}");
+        const type = (node.type || "utility").toLowerCase();
+        li.style.display = t === "*" || t === type ? "" : "none";
+      });
+    });
+    document.getElementById("save")?.addEventListener("click", persist);
+    document.getElementById("reset")?.addEventListener("click", () => {
+      localStorage.removeItem("workflow-state");
+      const inner = document.getElementById("inner");
+      inner.innerHTML = "";
+    });
   } catch (e) {
     console.error(e);
     const sidebar = document.getElementById("sidebar");
