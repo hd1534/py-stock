@@ -96,13 +96,7 @@ function renderSidebar(nodes) {
 function setupCanvas() {
   const canvas = document.getElementById("canvas");
   const viewport = document.getElementById("viewport");
-  const inner = document.getElementById("inner");
-  let pan = { x: 0, y: 0 };
-  let scale = 1;
-
-  function applyTransform() {
-    inner.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${scale})`;
-  }
+  const reteContainer = document.getElementById("rete");
 
   // drag from sidebar to canvas
   viewport.addEventListener("dragover", (e) => e.preventDefault());
@@ -111,17 +105,13 @@ function setupCanvas() {
     const data = e.dataTransfer.getData("application/json");
     if (!data) return;
     const node = JSON.parse(data);
-    const rect = viewport.getBoundingClientRect();
-
+    const rect = reteContainer.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-
-    // compensate transform
-    const invX = (x - pan.x) / scale;
-    const invY = (y - pan.y) / scale;
-
-    addNodeCard(inner, node, { x: invX, y: invY });
-    saveCurrent();
+    if (window.WorkflowEditor) {
+      window.WorkflowEditor.addNodeFromInfo(node, { x, y });
+      saveCurrent();
+    }
   });
 
   // panning with middle mouse or space+drag
@@ -164,78 +154,18 @@ function setupCanvas() {
 
   // toolbar
   document.getElementById("reset-view")?.addEventListener("click", () => {
-    pan = { x: 0, y: 0 };
-    scale = 1;
-    applyTransform();
-  });
-
-  // initial transform only; workflow data will be loaded in init()
-  applyTransform();
-}
-
-function addNodeCard(container, node, pos) {
-  const card = document.createElement("div");
-  const meta =
-    TYPE_META[(node.type || "utility").toLowerCase()] || TYPE_META.utility;
-  card.className = `absolute border ${meta.color} rounded shadow w-56 select-none`;
-  card.style.left = `${pos.x}px`;
-  card.style.top = `${pos.y}px`;
-  card.innerHTML = `
-    <div class="text-sm font-semibold mb-1 px-3 py-2 border-b bg-white/70 card-drag-handle">${
-      node.name
-    }</div>
-    <div class="p-3 text-xs opacity-80">${node.category || ""}</div>
-    <div class="px-3 pb-3 text-[10px] opacity-70">Inputs: ${Object.keys(
-      node.inputs?.properties || {}
-    ).join(", ")}</div>
-  `;
-  container.appendChild(card);
-
-  // drag within canvas
-  const handle = card.querySelector(".card-drag-handle");
-  let dragging = false;
-  let start = { x: 0, y: 0 };
-  let origin = { x: pos.x, y: pos.y };
-  handle.addEventListener("mousedown", (e) => {
-    dragging = true;
-    start = { x: e.clientX, y: e.clientY };
-    origin = { x: parseFloat(card.style.left), y: parseFloat(card.style.top) };
-    e.preventDefault();
-  });
-  window.addEventListener("mousemove", (e) => {
-    if (!dragging) return;
-    const dx = e.clientX - start.x;
-    const dy = e.clientY - start.y;
-    card.style.left = `${origin.x + dx}px`;
-    card.style.top = `${origin.y + dy}px`;
-  });
-  window.addEventListener("mouseup", () => {
-    if (dragging) saveCurrent();
-    dragging = false;
-  });
-
-  // simple close
-  card.addEventListener("dblclick", () => {
-    card.remove();
-    saveCurrent();
+    if (window.WorkflowEditor) window.WorkflowEditor.center();
   });
 }
+
+// Cards UI is replaced by Rete nodes. Keeping functions for persistence below.
 
 function collect() {
-  const inner = document.getElementById("inner");
-  const items = Array.from(inner.children).map((el) => {
-    const nameEl = el.querySelector(".card-drag-handle");
-    const nodeName = nameEl?.textContent || "";
-    // store minimal node info (id preferred if sidebar had set it)
-    return {
-      node: { name: nodeName },
-      pos: {
-        x: parseFloat(el.style.left) || 0,
-        y: parseFloat(el.style.top) || 0,
-      },
-    };
-  });
-  return { nodes: items };
+  // Use Rete's schema export for persistence
+  if (window.WorkflowEditor) {
+    return { drawflow: window.WorkflowEditor.toJSON() };
+  }
+  return { drawflow: null };
 }
 
 async function persistToServer(currentId) {
@@ -309,9 +239,17 @@ async function init() {
     });
     document.getElementById("save")?.addEventListener("click", saveCurrent);
     document.getElementById("reset")?.addEventListener("click", async () => {
-      const inner = document.getElementById("inner");
-      inner.innerHTML = "";
+      if (window.WorkflowEditor) window.WorkflowEditor.clear();
       if (window.__WF_ID__) await saveCurrent();
+    });
+
+    // debounced autosave on editor change events
+    let saveTimer = null;
+    window.addEventListener("workflow:changed", () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        saveCurrent();
+      }, 500);
     });
 
     // Load workflow from server if URL contains ?wf=ID
@@ -319,9 +257,8 @@ async function init() {
     const wfId = params.get("wf");
     if (wfId) {
       const saved = await loadFromServer(wfId);
-      if (saved?.data?.nodes) {
-        const inner = document.getElementById("inner");
-        saved.data.nodes.forEach((n) => addNodeCard(inner, n.node, n.pos));
+      if (saved?.data?.drawflow && window.WorkflowEditor) {
+        await window.WorkflowEditor.fromJSON(saved.data.drawflow);
       }
       window.__WF_ID__ = parseInt(wfId, 10);
     }

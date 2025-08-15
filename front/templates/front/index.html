@@ -7,6 +7,11 @@
     <title>Workflow Builder</title>
     <!-- Tailwind CSS CDN (1차 개발용) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Drawflow (vanilla JS) -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/drawflow/dist/drawflow.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/drawflow/dist/drawflow.min.js"></script>
     <style>
       /* 간단한 캔버스 격자 배경 */
       .grid-bg {
@@ -66,13 +71,11 @@
           </button>
         </div>
         <div id="viewport" class="relative w-full h-full overflow-hidden">
-          <div
-            id="inner"
-            class="absolute top-0 left-0 w-full h-full grid-bg origin-top-left"></div>
+          <div id="rete" class="absolute inset-0 grid-bg"></div>
         </div>
       </main>
     </div>
-
+    <script src="{% static 'front/js/drawflow-editor.js' %}"></script>
     <script src="{% static 'front/js/workflow.js' %}"></script>
   </body>
 </html>
