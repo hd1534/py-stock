@@ -246,6 +246,63 @@ async function init() {
       `;
     }
 
+    // Node execution function
+    async function executeNode(nodeId, currentValues, nodeDetail) {
+      const resultDiv = document.getElementById("execution-result");
+      const runBtn = document.getElementById("run-node-btn");
+
+      if (!resultDiv || !runBtn) return;
+
+      // Show loading state
+      runBtn.disabled = true;
+      runBtn.textContent = "Running...";
+      resultDiv.innerHTML =
+        '<div class="text-blue-500">Executing node...</div>';
+
+      try {
+        const response = await fetch(`/api/nodes/${nodeId}/execute/`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(currentValues || {}),
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          resultDiv.innerHTML = `
+            <div class="text-green-600 font-medium">✓ Success</div>
+            <div class="mt-1 p-2 bg-green-50 rounded text-xs">
+              <pre class="whitespace-pre-wrap">${JSON.stringify(
+                result.result,
+                null,
+                2
+              )}</pre>
+            </div>
+          `;
+        } else {
+          resultDiv.innerHTML = `
+            <div class="text-red-600 font-medium">✗ Error</div>
+            <div class="mt-1 p-2 bg-red-50 rounded text-xs">
+              ${result.error || "Unknown error occurred"}
+            </div>
+          `;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `
+          <div class="text-red-600 font-medium">✗ Network Error</div>
+          <div class="mt-1 p-2 bg-red-50 rounded text-xs">
+            ${error.message}
+          </div>
+        `;
+      } finally {
+        // Reset button state
+        runBtn.disabled = false;
+        runBtn.textContent = "Run Node";
+      }
+    }
+
     function openPanelForNode(detail) {
       if (!detail || !detail.data?.info) {
         panel?.classList.add("hidden");
@@ -258,10 +315,31 @@ async function init() {
       const fieldsHtml = Object.keys(inputs)
         .map((k) => renderField(k, inputs[k], currentValues[k]))
         .join("");
+
+      // Add execution button if the node has an ID
+      const nodeId = info.id;
+      const runButtonHtml = nodeId
+        ? `<div class="mt-4 pt-4 border-t border-gray-200">
+             <button id="run-node-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-2 px-3 rounded transition-colors">
+               Run Node
+             </button>
+             <div id="execution-result" class="mt-2 text-xs"></div>
+           </div>`
+        : "";
+
       formRoot.innerHTML =
-        fieldsHtml ||
-        '<div class="text-xs opacity-70">설정할 필드가 없습니다.</div>';
+        (fieldsHtml ||
+          '<div class="text-xs opacity-70">설정할 필드가 없습니다.</div>') +
+        runButtonHtml;
       panel?.classList.remove("hidden");
+
+      // Add run button event listener
+      const runBtn = formRoot.querySelector("#run-node-btn");
+      if (runBtn && nodeId) {
+        runBtn.addEventListener("click", async () => {
+          await executeNode(nodeId, currentValues, detail);
+        });
+      }
 
       // bind change
       formRoot.querySelectorAll("input").forEach((el) => {
@@ -275,6 +353,9 @@ async function init() {
           ) {
             val = Number(val);
           }
+          // Update current values for execution
+          currentValues[key] = val;
+
           const newData = {
             values: Object.assign({}, currentValues, { [key]: val }),
           };

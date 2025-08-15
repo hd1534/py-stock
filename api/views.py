@@ -1,12 +1,14 @@
+import json
+from typing import Any, Dict, List
+
 from django.http import JsonResponse, HttpResponseNotAllowed
 from django.views.decorators.csrf import csrf_exempt
-from typing import Any, Dict, List
 
 from api.nodes import NODES
 from .models import Workflow
 
-# Create your views here.
 
+# TODO: using django-rest-framework
 
 def health_check(request):
     return JsonResponse({'status': 'healthy', 'message': 'API is running'})
@@ -76,3 +78,61 @@ def workflows_create(request):
     data = body.get('data') or {}
     wf = Workflow.objects.create(name=name, data=data)
     return JsonResponse({'ok': True, 'id': wf.id})
+
+
+@csrf_exempt
+def node_execute(request, node_id: str):
+    """특정 ID를 가진 노드를 실행하는 엔드포인트"""
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+
+    # 요청 데이터 파싱
+    try:
+        data = json.loads(request.body or '{}')
+    except Exception:
+        return JsonResponse({'error': 'invalid json'}, status=400)
+
+    # NODES에서 해당 ID를 가진 노드 클래스 찾기
+    target_node_class = None
+    for node_class in NODES:
+        # 클래스인 경우 임시 인스턴스를 만들어서 NODE_ID 확인
+        if isinstance(node_class, type):
+            temp_instance = node_class()
+            if hasattr(temp_instance, 'NODE_ID') and temp_instance.NODE_ID == node_id:
+                target_node_class = node_class
+                break
+        else:
+            # 이미 인스턴스인 경우
+            if hasattr(node_class, 'NODE_ID') and node_class.NODE_ID == node_id:
+                target_node_class = type(node_class)
+                break
+
+    if target_node_class is None:
+        return JsonResponse({'error': f'node with id "{node_id}" not found'}, status=404)
+
+    # 노드 인스턴스 생성 및 실행
+    try:
+        node_instance = target_node_class()
+
+        # BaseNode의 run() 메서드를 사용하여 검증과 실행을 한번에 처리
+        execution_result = node_instance.run(data)
+
+        if execution_result.success:
+            return JsonResponse({
+                'success': True,
+                'node_id': node_id,
+                'result': execution_result.outputs
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'node_id': node_id,
+                'error': execution_result.error
+            }, status=400)
+
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'node_id': node_id,
+            'error': str(e)
+        }, status=500)
