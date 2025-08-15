@@ -7,11 +7,7 @@
     <title>Workflow Builder</title>
     <!-- Tailwind CSS CDN (1차 개발용) -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Drawflow (vanilla JS) -->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/drawflow/dist/drawflow.min.css" />
-    <script src="https://cdn.jsdelivr.net/npm/drawflow/dist/drawflow.min.js"></script>
+    <!-- Pure JavaScript Node Editor (no external libraries) -->
     <style>
       /* 간단한 캔버스 격자 배경 */
       .grid-bg {
@@ -49,7 +45,7 @@
       </aside>
 
       <!-- Canvas -->
-      <main class="relative" id="canvas">
+      <main class="relative h-full grid-bg" id="canvas">
         <div class="absolute top-2 right-2 text-xs text-gray-500">
           드래그해서 노드를 배치하세요
         </div>
@@ -70,9 +66,6 @@
             뷰 리셋
           </button>
         </div>
-        <div id="viewport" class="relative w-full h-full overflow-hidden">
-          <div id="rete" class="absolute inset-0 grid-bg"></div>
-        </div>
       </main>
     </div>
 
@@ -90,7 +83,7 @@
         id="node-form"
         class="p-3 overflow-y-auto h-[calc(100%-44px)] text-sm"></div>
     </div>
-    <script src="{% static 'front/js/drawflow-editor.js' %}"></script>
+    <script src="{% static 'front/js/custom-node-editor.js' %}"></script>
     <script src="{% static 'front/js/workflow.js' %}"></script>
   </body>
 </html>

@@ -95,17 +95,15 @@ function renderSidebar(nodes) {
 
 function setupCanvas() {
   const canvas = document.getElementById("canvas");
-  const viewport = document.getElementById("viewport");
-  const reteContainer = document.getElementById("rete");
 
   // drag from sidebar to canvas
-  viewport.addEventListener("dragover", (e) => e.preventDefault());
-  viewport.addEventListener("drop", (e) => {
+  canvas.addEventListener("dragover", (e) => e.preventDefault());
+  canvas.addEventListener("drop", (e) => {
     e.preventDefault();
     const data = e.dataTransfer.getData("application/json");
     if (!data) return;
     const node = JSON.parse(data);
-    const rect = reteContainer.getBoundingClientRect();
+    const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     if (window.WorkflowEditor) {
@@ -113,44 +111,6 @@ function setupCanvas() {
       saveCurrent();
     }
   });
-
-  // panning with middle mouse or space+drag
-  let isPanning = false;
-  let start = { x: 0, y: 0 };
-  viewport.addEventListener("mousedown", (e) => {
-    if (e.button === 1 || e.target === viewport || e.code === "Space") {
-      isPanning = true;
-      start = { x: e.clientX - pan.x, y: e.clientY - pan.y };
-      e.preventDefault();
-    }
-  });
-  window.addEventListener("mousemove", (e) => {
-    if (!isPanning) return;
-    pan.x = e.clientX - start.x;
-    pan.y = e.clientY - start.y;
-    applyTransform();
-  });
-  window.addEventListener("mouseup", () => (isPanning = false));
-
-  // zoom with wheel
-  viewport.addEventListener(
-    "wheel",
-    (e) => {
-      if (!e.ctrlKey && !e.metaKey) return; // pinch/ctrl+wheel to zoom
-      e.preventDefault();
-      const delta = -Math.sign(e.deltaY) * 0.1;
-      const newScale = Math.min(2, Math.max(0.5, scale + delta));
-      // zoom towards cursor
-      const rect = viewport.getBoundingClientRect();
-      const cx = e.clientX - rect.left;
-      const cy = e.clientY - rect.top;
-      pan.x = cx - ((cx - pan.x) * newScale) / scale;
-      pan.y = cy - ((cy - pan.y) * newScale) / scale;
-      scale = newScale;
-      applyTransform();
-    },
-    { passive: false }
-  );
 
   // toolbar
   document.getElementById("reset-view")?.addEventListener("click", () => {
@@ -161,11 +121,11 @@ function setupCanvas() {
 // Cards UI is replaced by Rete nodes. Keeping functions for persistence below.
 
 function collect() {
-  // Use Rete's schema export for persistence
+  // Use custom editor's JSON format for persistence
   if (window.WorkflowEditor) {
-    return { drawflow: window.WorkflowEditor.toJSON() };
+    return { custom_editor: window.WorkflowEditor.toJSON() };
   }
-  return { drawflow: null };
+  return { custom_editor: null };
 }
 
 async function persistToServer(currentId) {
@@ -335,8 +295,16 @@ async function init() {
     const wfId = params.get("wf");
     if (wfId) {
       const saved = await loadFromServer(wfId);
-      if (saved?.data?.drawflow && window.WorkflowEditor) {
-        await window.WorkflowEditor.fromJSON(saved.data.drawflow);
+      if (saved?.data?.custom_editor && window.WorkflowEditor) {
+        await window.WorkflowEditor.fromJSON(saved.data.custom_editor);
+      } else if (saved?.data?.litegraph && window.WorkflowEditor) {
+        // Backward compatibility with LiteGraph data
+        console.warn(
+          "Found legacy LiteGraph data, but using custom editor now"
+        );
+      } else if (saved?.data?.drawflow && window.WorkflowEditor) {
+        // Backward compatibility with old Drawflow data
+        console.warn("Found legacy Drawflow data, but using custom editor now");
       }
       window.__WF_ID__ = parseInt(wfId, 10);
     }
