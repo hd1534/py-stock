@@ -382,7 +382,16 @@
         if (!exists) {
           connections.push(connection);
           updateConnections();
+
+          // Propagate output values to connected inputs
+          propagateConnectionData(connection);
+
           window.dispatchEvent(new CustomEvent("workflow:changed"));
+          window.dispatchEvent(
+            new CustomEvent("workflow:connectionCreated", {
+              detail: connection,
+            })
+          );
         }
       }
     }
@@ -394,6 +403,56 @@
     isConnecting = false;
     connectionStart = null;
     document.body.style.cursor = "default";
+  }
+
+  // Propagate data from output node to input node through connection
+  function propagateConnectionData(connection) {
+    const fromNode = nodes.find((n) => n.id === connection.from.node);
+    const toNode = nodes.find((n) => n.id === connection.to.node);
+
+    if (!fromNode || !toNode) return;
+
+    // Get output value from source node
+    const outputValue = fromNode.data?.outputs?.[connection.from.port];
+
+    if (outputValue !== undefined) {
+      // Update input value in target node
+      if (!toNode.data) toNode.data = {};
+      if (!toNode.data.values) toNode.data.values = {};
+
+      toNode.data.values[connection.to.port] = outputValue;
+
+      // Dispatch event to update UI
+      window.dispatchEvent(
+        new CustomEvent("workflow:nodeDataUpdated", {
+          detail: { nodeId: toNode.id, data: toNode.data },
+        })
+      );
+    }
+  }
+
+  // Propagate data for all connections from a specific node's output
+  function propagateFromNodeOutput(nodeId, outputPort, value) {
+    const relatedConnections = connections.filter(
+      (conn) => conn.from.node === nodeId && conn.from.port === outputPort
+    );
+
+    relatedConnections.forEach((connection) => {
+      const toNode = nodes.find((n) => n.id === connection.to.node);
+      if (toNode) {
+        if (!toNode.data) toNode.data = {};
+        if (!toNode.data.values) toNode.data.values = {};
+
+        toNode.data.values[connection.to.port] = value;
+
+        // Dispatch event to update UI
+        window.dispatchEvent(
+          new CustomEvent("workflow:nodeDataUpdated", {
+            detail: { nodeId: toNode.id, data: toNode.data },
+          })
+        );
+      }
+    });
   }
 
   function updateConnections() {
@@ -573,7 +632,17 @@
   function updateNodeData(id, newData) {
     const node = nodes.find((n) => n.id === id);
     if (node) {
+      const oldOutputs = node.data?.outputs || {};
       node.data = Object.assign({}, node.data, newData);
+      const newOutputs = node.data?.outputs || {};
+
+      // Check if any output values changed and propagate to connected nodes
+      Object.keys(newOutputs).forEach((outputPort) => {
+        if (oldOutputs[outputPort] !== newOutputs[outputPort]) {
+          propagateFromNodeOutput(id, outputPort, newOutputs[outputPort]);
+        }
+      });
+
       window.dispatchEvent(new CustomEvent("workflow:changed"));
     }
   }
@@ -587,6 +656,7 @@
     center,
     getSelectedNode,
     updateNodeData,
+    getNodeById: (id) => nodes.find((n) => n.id === id),
     // Additional utilities
     nodes: () => nodes,
     connections: () => connections,

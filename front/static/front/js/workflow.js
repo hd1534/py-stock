@@ -294,7 +294,7 @@ async function init() {
 
         if (result.success) {
           // Update output fields with new values
-          updateOutputFields(result.result);
+          updateOutputFields(result.result, nodeDetail.id);
 
           // Add to history
           addToExecutionHistory(timestamp, true, result.result, historyDiv);
@@ -333,8 +333,10 @@ async function init() {
     }
 
     // Helper function to update output fields
-    function updateOutputFields(resultData) {
+    function updateOutputFields(resultData, nodeId) {
       const outputFields = document.querySelectorAll('[data-output="true"]');
+      const updatedOutputs = {};
+
       outputFields.forEach((field) => {
         const key = field.getAttribute("data-key");
         if (resultData.hasOwnProperty(key)) {
@@ -347,8 +349,27 @@ async function init() {
           } else {
             field.value = value;
           }
+          updatedOutputs[key] = value;
         }
       });
+
+      // Update node data with new outputs to propagate to connected nodes
+      if (Object.keys(updatedOutputs).length > 0 && nodeId) {
+        // Get current node data
+        const node = window.WorkflowEditor?.getNodeById?.(nodeId);
+        if (node) {
+          const currentValues = node.data?.values || {};
+          const newData = {
+            values: currentValues,
+            outputs: Object.assign(
+              {},
+              node.data?.outputs || {},
+              updatedOutputs
+            ),
+          };
+          window.WorkflowEditor?.updateNodeData(nodeId, newData);
+        }
+      }
     }
 
     // Helper function to add execution to history
@@ -382,6 +403,30 @@ async function init() {
       while (historyDiv.children.length > 10) {
         historyDiv.removeChild(historyDiv.lastChild);
       }
+    }
+
+    // Helper function to get currently selected node ID from panel
+    function getCurrentSelectedNodeId() {
+      const runBtn = document.getElementById("run-node-btn");
+      return runBtn?.getAttribute("data-node-id") || null;
+    }
+
+    // Helper function to refresh input fields with new values
+    function refreshInputFields(newValues) {
+      Object.keys(newValues).forEach((key) => {
+        const inputField = document.querySelector(
+          `input[data-key="${key}"]:not([data-output]), textarea[data-key="${key}"]:not([data-output])`
+        );
+        if (inputField) {
+          if (inputField.type === "checkbox") {
+            inputField.checked = newValues[key];
+          } else {
+            inputField.value = newValues[key];
+          }
+          // Trigger input event to update the node data
+          inputField.dispatchEvent(new Event("input"));
+        }
+      });
     }
 
     function openPanelForNode(detail) {
@@ -454,6 +499,7 @@ async function init() {
       // Add run button event listener
       const runBtn = formRoot.querySelector("#run-node-btn");
       if (runBtn && nodeId) {
+        runBtn.setAttribute("data-node-id", detail.id);
         runBtn.addEventListener("click", async () => {
           await executeNode(nodeId, currentValues, detail);
         });
@@ -523,6 +569,42 @@ async function init() {
     window.addEventListener("workflow:nodeSelected", (e) =>
       openPanelForNode(e.detail)
     );
+
+    // Handle node data updates (for connected input propagation)
+    window.addEventListener("workflow:nodeDataUpdated", (e) => {
+      const { nodeId, data } = e.detail;
+
+      // If the currently selected node panel is open and it's for this node, refresh the inputs
+      if (panel && !panel.classList.contains("hidden")) {
+        const currentNodeId = getCurrentSelectedNodeId();
+        if (currentNodeId === nodeId) {
+          // Refresh input fields with new values
+          refreshInputFields(data.values || {});
+        }
+      }
+    });
+
+    // Handle connection creation (propagate initial values)
+    window.addEventListener("workflow:connectionCreated", (e) => {
+      const connection = e.detail;
+
+      // If the target node panel is currently open, refresh it
+      if (panel && !panel.classList.contains("hidden")) {
+        const currentNodeId = getCurrentSelectedNodeId();
+        if (currentNodeId === connection.to.node) {
+          // Find the target node and refresh the panel
+          const targetNode = window.WorkflowEditor?.getNodeById?.(
+            connection.to.node
+          );
+          if (targetNode) {
+            openPanelForNode({
+              id: targetNode.id,
+              data: targetNode.data || {},
+            });
+          }
+        }
+      }
+    });
 
     // Load workflow from server if URL contains ?wf=ID
     const params = new URLSearchParams(location.search);
